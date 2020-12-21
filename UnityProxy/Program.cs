@@ -1,95 +1,104 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Threading;
 
 namespace UnityProxy
 {
-	class Program
-	{
-		/// <summary>
-		/// Magic string our build pipeline writes to the log after a successful build.
-		/// </summary>
-		private const string SuccessMagicString = "Successful build ~0xDEADBEEF";
+    class Program
+    {
+        /// <summary>
+        /// Magic string our build pipeline writes to the log after a successful build.
+        /// </summary>
+        internal const string SuccessMagicString = "Successful build ~0xDEADBEEF";
 
-		static void Main(string[] args)
-		{
-			string unityPath, artifactsPath;
-			int startingArgumentIndex = ParseArguments(args, out unityPath, out artifactsPath);
-			string logPath = Path.GetTempFileName();
+        static void Main(string[] args)
+        {
+            // Support ANSI colors, see https://stackoverflow.com/questions/34073467/ansi-coloring-console-output-with-net
+            var stdout = Console.OpenStandardOutput();
+            var con = new StreamWriter(stdout, Encoding.ASCII)
+            {
+                AutoFlush = true
+            };
+            Console.SetOut(con);
 
-			Watcher watcher = new Watcher(logPath);
-			Thread watcherThread = new Thread(watcher.Run);
-			watcherThread.Start();
+            string unityPath, artifactsPath;
+            int startingArgumentIndex = ParseArguments(args, out unityPath, out artifactsPath);
+            string logPath = Path.GetTempFileName();
 
-			Process unity = new Process();
-			unity.StartInfo = new ProcessStartInfo(unityPath);
+            Watcher watcher = new Watcher(logPath);
+            Thread watcherThread = new Thread(watcher.Run);
+            watcherThread.Start();
 
-			unity.StartInfo.Arguments = "-logFile \"" + logPath + "\"";
+            Process unity = new Process();
+            unity.StartInfo = new ProcessStartInfo(unityPath);
 
-			for (int i = startingArgumentIndex; i < args.Length; i++)
-			{
-				unity.StartInfo.Arguments += " \"" + args[i] + "\"";
-			}
+            unity.StartInfo.Arguments = "-logFile \"" + logPath + "\"";
 
-			Console.WriteLine("Starting Unity with arguments: " + unity.StartInfo.Arguments);
+            for (int i = startingArgumentIndex; i < args.Length; i++)
+            {
+                unity.StartInfo.Arguments += " \"" + args[i] + "\"";
+            }
 
-			unity.Start();
+            Console.WriteLine("Starting Unity with arguments: " + unity.StartInfo.Arguments);
 
-			Console.WriteLine("##teamcity[setParameter name='{0}' value='{1}']", "unityPID", unity.Id);
+            unity.Start();
 
-			unity.WaitForExit();
-			watcher.Stop();
-			watcherThread.Join();
+            Console.WriteLine("##teamcity[setParameter name='{0}' value='{1}']", "unityPID", unity.Id);
 
-			if (artifactsPath != null)
-			{
-				SaveArtifacts(artifactsPath, watcher.FullLog);
-			}
+            unity.WaitForExit();
+            watcher.Stop();
+            watcherThread.Join();
 
-			if (watcher.FullLog.Contains(SuccessMagicString))
-			{
-				Console.WriteLine("Success.");
-				Environment.Exit(0);
-			}
-			else
-			{
-				Console.WriteLine("Failure.");
-				Environment.Exit(1);
-			}
-		}
+            if (artifactsPath != null)
+            {
+                SaveArtifacts(artifactsPath, watcher.FullLog);
+            }
 
-		/// <summary>
-		/// Saves build artifacts (log file) to the specified path.
-		/// </summary>
-		private static void SaveArtifacts(string artifactsPath, string logText)
-		{
-			Directory.CreateDirectory(artifactsPath);
+            if (watcher.FullLog.Contains(SuccessMagicString))
+            {
+                Console.WriteLine("Success.");
+                Environment.Exit(0);
+            }
+            else
+            {
+                Console.WriteLine("Failure.");
+                Environment.Exit(1);
+            }
+        }
 
-			File.WriteAllText(artifactsPath + "/editor.log", logText);
-		}
+        /// <summary>
+        /// Saves build artifacts (log file) to the specified path.
+        /// </summary>
+        private static void SaveArtifacts(string artifactsPath, string logText)
+        {
+            Directory.CreateDirectory(artifactsPath);
 
-		/// <summary>
-		/// Parses command line arguments.
-		/// </summary>
-		/// <param name="args">Arguments</param>
-		/// <param name="unityPath">Path to the unity executable.</param>
-		/// <param name="artifactsPath">PAth where the artifacts should be saved.</param>
-		/// <returns>The number of arguments parsed.</returns>
-		private static int ParseArguments(string[] args, out string unityPath, out string artifactsPath)
-		{
-			unityPath = args[0];
-			artifactsPath = null;
+            File.WriteAllText(artifactsPath + "/editor.log", logText);
+        }
 
-			if (args.Length > 1)
-			{
-				if (args[1] == "-artifactsPath")
-				{
-					artifactsPath = args[2];
-					return 3;
-				}
-			}
-			return 1;
-		}
-	}
+        /// <summary>
+        /// Parses command line arguments.
+        /// </summary>
+        /// <param name="args">Arguments</param>
+        /// <param name="unityPath">Path to the unity executable.</param>
+        /// <param name="artifactsPath">PAth where the artifacts should be saved.</param>
+        /// <returns>The number of arguments parsed.</returns>
+        private static int ParseArguments(string[] args, out string unityPath, out string artifactsPath)
+        {
+            unityPath = args[0];
+            artifactsPath = null;
+
+            if (args.Length > 1)
+            {
+                if (args[1] == "-artifactsPath")
+                {
+                    artifactsPath = args[2];
+                    return 3;
+                }
+            }
+            return 1;
+        }
+    }
 }
